@@ -39,7 +39,7 @@ app.post("/api/messages", async (req, res) => {
             (name, email, subject, message)
             VALUES (?, ?, ?, ?)
         `;
-
+        
         await pool.execute(sql, [
             name,
             email,
