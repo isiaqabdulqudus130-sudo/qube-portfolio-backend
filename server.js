@@ -1,0 +1,61 @@
+const express = require("express");
+const cors = require("cors");
+const mysql = require("mysql2/promise");
+require("dotenv").config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+
+const pool = mysql.createPool(process.env.DATABASE_URL);
+
+app.get("/", (req, res) => {
+    res.json({
+        message: "Qube Portfolio Backend is running!"
+    });
+});
+
+app.post("/api/messages", async (req, res) => {
+    try {
+        const { name, email, subject, message } = req.body;
+
+        if (!name || !email || !message) {
+            return res.status(400).json({
+                success: false,
+                message: "Name, email and message are required."
+            });
+        }
+
+        const sql = `
+            INSERT INTO messages
+            (name, email, subject, message)
+            VALUES (?, ?, ?, ?)
+        `;
+
+        await pool.execute(sql, [
+            name,
+            email,
+            subject || null,
+            message
+        ]);
+
+        res.status(201).json({
+            success: true,
+            message: "Your message has been received successfully."
+        });
+
+    } catch (error) {
+        console.error("Database error:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Something went wrong. Please try again later."
+        });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`Qube backend running on port ${PORT}`);
+});
