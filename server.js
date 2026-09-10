@@ -498,6 +498,63 @@ app.patch(
     }
 );
 
+app.delete(
+    "/api/admin/messages/:id",
+    requireAdmin,
+    async (req, res) => {
+
+        try {
+
+            const messageId =
+                Number(req.params.id);
+
+            if (!Number.isInteger(messageId)) {
+
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Invalid message ID."
+                });
+            }
+
+            const [result] = await pool.execute(
+                `
+                DELETE FROM messages
+                WHERE id = ?
+                `,
+                [messageId]
+            );
+
+            if (result.affectedRows === 0) {
+
+                return res.status(404).json({
+                    success: false,
+                    message:
+                        "Message not found."
+                });
+            }
+
+            res.json({
+                success: true,
+                message:
+                    "Message deleted successfully."
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Delete message error:",
+                error
+            );
+
+            res.status(500).json({
+                success: false,
+                message:
+                    "Unable to delete message."
+            });
+        }
+    }
+);
 
 // ===============================
 // ADMIN LOGOUT
