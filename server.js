@@ -397,15 +397,30 @@ app.get(
                     email,
                     subject,
                     message,
-                    created_at
+                    created_at,
+                    is_read
                 FROM messages
                 ORDER BY created_at DESC
             `);
 
+            const unreadCount =
+                messages.filter(
+                    message => Number(message.is_read) === 0
+                ).length;
+
+            const readCount =
+                messages.filter(
+                    message => Number(message.is_read) === 1
+                ).length;
 
             res.json({
                 success: true,
-                messages: messages
+                messages: messages,
+                stats: {
+                    total: messages.length,
+                    unread: unreadCount,
+                    read: readCount
+                }
             });
 
         } catch (error) {
