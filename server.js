@@ -16,14 +16,7 @@ const pool = mysql.createPool({
     password: process.env.MYSQLPASSWORD,
     database: process.env.MYSQLDATABASE
 });
-pool.query(`
-    ALTER TABLE messages
-    MODIFY COLUMN id INT NOT NULL AUTO_INCREMENT
-`).then(() => {
-    console.log("messages.id AUTO_INCREMENT fixed successfully");
-}).catch((error) => {
-    console.error("AUTO_INCREMENT fix error:", error);
-});
+
 app.get("/", (req, res) => {
     res.json({
         message: "Qube Portfolio Backend is running!"
@@ -46,7 +39,7 @@ app.post("/api/messages", async (req, res) => {
             (name, email, subject, message)
             VALUES (?, ?, ?, ?)
         `;
-        
+
         await pool.execute(sql, [
             name,
             email,
