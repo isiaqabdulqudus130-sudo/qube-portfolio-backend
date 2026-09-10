@@ -438,6 +438,67 @@ app.get(
         }
     }
 );
+
+app.patch(
+    "/api/admin/messages/:id/read",
+    requireAdmin,
+    async (req, res) => {
+
+        try {
+
+            const messageId =
+                Number(req.params.id);
+
+            if (!Number.isInteger(messageId)) {
+
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Invalid message ID."
+                });
+            }
+
+            const [result] = await pool.execute(
+                `
+                UPDATE messages
+                SET is_read = 1
+                WHERE id = ?
+                `,
+                [messageId]
+            );
+
+            if (result.affectedRows === 0) {
+
+                return res.status(404).json({
+                    success: false,
+                    message:
+                        "Message not found."
+                });
+            }
+
+            res.json({
+                success: true,
+                message:
+                    "Message marked as read."
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Mark read error:",
+                error
+            );
+
+            res.status(500).json({
+                success: false,
+                message:
+                    "Unable to update message."
+            });
+        }
+    }
+);
+
+
 // ===============================
 // ADMIN LOGOUT
 // ===============================
