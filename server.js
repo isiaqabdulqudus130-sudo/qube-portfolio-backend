@@ -382,9 +382,47 @@ app.get(
                 "Admin authentication verified."
         });
     }
+    );
+app.get(
+    "/api/admin/messages",
+    requireAdmin,
+    async (req, res) => {
+
+        try {
+
+            const [messages] = await pool.execute(`
+                SELECT
+                    id,
+                    name,
+                    email,
+                    subject,
+                    message,
+                    created_at
+                FROM messages
+                ORDER BY created_at DESC
+            `);
+
+
+            res.json({
+                success: true,
+                messages: messages
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Admin messages error:",
+                error
+            );
+
+            res.status(500).json({
+                success: false,
+                message:
+                    "Unable to load messages."
+            });
+        }
+    }
 );
-
-
 // ===============================
 // ADMIN LOGOUT
 // ===============================
