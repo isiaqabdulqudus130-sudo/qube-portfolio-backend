@@ -1,7 +1,6 @@
 const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2/promise");
-const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 require("dotenv").config();
 
@@ -22,21 +21,6 @@ const pool = mysql.createPool({
     user: process.env.MYSQLUSER,
     password: process.env.MYSQLPASSWORD,
     database: process.env.MYSQLDATABASE
-});
-
-
-// ===============================
-// EMAIL
-// ===============================
-
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: Number(process.env.SMTP_PORT) === 465,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASSWORD
-    }
 });
 
 
@@ -119,6 +103,7 @@ app.post("/api/admin/login", async (req, res) => {
             });
         }
 
+        // Check admin email
         if (
             email.toLowerCase() !==
             process.env.ADMIN_EMAIL.toLowerCase()
@@ -129,6 +114,7 @@ app.post("/api/admin/login", async (req, res) => {
             });
         }
 
+        // Check admin password
         if (password !== process.env.ADMIN_PASSWORD) {
             return res.status(401).json({
                 success: false,
@@ -136,53 +122,72 @@ app.post("/api/admin/login", async (req, res) => {
             });
         }
 
-        // Generate a 6-digit OTP
+
+        // ===============================
+        // GENERATE 6-DIGIT OTP
+        // ===============================
+
         const otp = crypto
             .randomInt(100000, 1000000)
             .toString();
 
+
+        // Store OTP
         pendingOTP = {
             code: otp,
             expiresAt: Date.now() + 5 * 60 * 1000,
             attempts: 0
         };
 
-        // Send OTP to admin email
-        await transporter.sendMail({
-            from: process.env.SMTP_USER,
-            to: process.env.ADMIN_EMAIL,
-            subject: "Qube Portfolio Admin Login OTP",
-            text: `Your Qube Portfolio admin login OTP is: ${otp}
+
+        // ===============================
+        // SEND OTP THROUGH GOOGLE APPS SCRIPT
+        // ===============================
+
+        const emailResponse = await fetch(
+            process.env.GOOGLE_SCRIPT_URL,
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    to: process.env.ADMIN_EMAIL,
+
+                    subject:
+                        "Qube Portfolio Admin Login OTP",
+
+                    message:
+                        `Your Qube Portfolio admin login OTP is: ${otp}
 
 This OTP expires in 5 minutes.
 
-If you did not attempt to log in, please ignore this email.`,
-            html: `
-                <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-                    <h2>Qube Portfolio Admin Login</h2>
+If you did not attempt to log in, please ignore this email.`
+                })
+            }
+        );
 
-                    <p>Your verification code is:</p>
 
-                    <div style="
-                        font-size: 32px;
-                        font-weight: bold;
-                        letter-spacing: 8px;
-                        margin: 20px 0;
-                    ">
-                        ${otp}
-                    </div>
+        const emailData =
+            await emailResponse.json();
 
-                    <p>
-                        This OTP expires in <strong>5 minutes</strong>.
-                    </p>
 
-                    <p>
-                        If you did not attempt to log in,
-                        please ignore this email.
-                    </p>
-                </div>
-            `
-        });
+        // Make sure Google Apps Script succeeded
+        if (
+            !emailResponse.ok ||
+            !emailData.success
+        ) {
+            throw new Error(
+                "Google email service failed."
+            );
+        }
+
+
+        // ===============================
+        // SUCCESS
+        // ===============================
 
         res.json({
             success: true,
@@ -191,11 +196,19 @@ If you did not attempt to log in, please ignore this email.`,
         });
 
     } catch (error) {
-        console.error("Admin login error:", error);
+
+        console.error(
+            "Admin login error:",
+            error
+        );
+
+        // Remove OTP if email failed
+        pendingOTP = null;
 
         res.status(500).json({
             success: false,
-            message: "Unable to send OTP. Please try again."
+            message:
+                "Unable to send OTP. Please try again."
         });
     }
 });
@@ -208,62 +221,103 @@ If you did not attempt to log in, please ignore this email.`,
 
 app.post("/api/admin/verify-otp", (req, res) => {
     try {
+
         const { otp } = req.body;
 
+
+        // No active OTP
         if (!pendingOTP) {
             return res.status(400).json({
                 success: false,
-                message: "No active OTP. Please login again."
+                message:
+                    "No active OTP. Please login again."
             });
         }
 
-        // Check expiry
-        if (Date.now() > pendingOTP.expiresAt) {
+
+        // ===============================
+        // CHECK OTP EXPIRATION
+        // ===============================
+
+        if (
+            Date.now() >
+            pendingOTP.expiresAt
+        ) {
+
             pendingOTP = null;
 
             return res.status(401).json({
                 success: false,
-                message: "OTP has expired. Please login again."
+                message:
+                    "OTP has expired. Please login again."
             });
         }
 
-        // Limit attempts
+
+        // ===============================
+        // LIMIT OTP ATTEMPTS
+        // ===============================
+
         if (pendingOTP.attempts >= 5) {
+
             pendingOTP = null;
 
             return res.status(401).json({
                 success: false,
-                message: "Too many incorrect attempts. Please login again."
+                message:
+                    "Too many incorrect attempts. Please login again."
             });
         }
 
+
+        // Count this attempt
         pendingOTP.attempts++;
 
+
+        // ===============================
+        // CHECK OTP
+        // ===============================
+
         if (otp !== pendingOTP.code) {
+
             return res.status(401).json({
                 success: false,
-                message: "Invalid OTP."
+                message:
+                    "Invalid OTP."
             });
         }
 
-        // OTP is now used
+
+        // ===============================
+        // OTP SUCCESS
+        // ===============================
+
         pendingOTP = null;
 
-        // Generate admin session token
-        adminSession = crypto.randomBytes(32).toString("hex");
+
+        // Create admin session token
+        adminSession =
+            crypto.randomBytes(32).toString("hex");
+
 
         res.json({
             success: true,
-            message: "Admin login successful.",
+            message:
+                "Admin login successful.",
             token: adminSession
         });
 
     } catch (error) {
-        console.error("OTP verification error:", error);
+
+        console.error(
+            "OTP verification error:",
+            error
+        );
 
         res.status(500).json({
             success: false,
-            message: "Something went wrong."
+            message:
+                "Something went wrong."
         });
     }
 });
@@ -275,23 +329,39 @@ app.post("/api/admin/verify-otp", (req, res) => {
 
 function requireAdmin(req, res, next) {
 
-    const authHeader = req.headers.authorization;
+    const authHeader =
+        req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+
+    if (
+        !authHeader ||
+        !authHeader.startsWith("Bearer ")
+    ) {
+
         return res.status(401).json({
             success: false,
-            message: "Unauthorized."
+            message:
+                "Unauthorized."
         });
     }
 
-    const token = authHeader.split(" ")[1];
 
-    if (!adminSession || token !== adminSession) {
+    const token =
+        authHeader.split(" ")[1];
+
+
+    if (
+        !adminSession ||
+        token !== adminSession
+    ) {
+
         return res.status(401).json({
             success: false,
-            message: "Unauthorized."
+            message:
+                "Unauthorized."
         });
     }
+
 
     next();
 }
@@ -301,33 +371,50 @@ function requireAdmin(req, res, next) {
 // ADMIN DASHBOARD TEST
 // ===============================
 
-app.get("/api/admin/check", requireAdmin, (req, res) => {
-    res.json({
-        success: true,
-        message: "Admin authentication verified."
-    });
-});
+app.get(
+    "/api/admin/check",
+    requireAdmin,
+    (req, res) => {
+
+        res.json({
+            success: true,
+            message:
+                "Admin authentication verified."
+        });
+    }
+);
 
 
 // ===============================
 // ADMIN LOGOUT
 // ===============================
 
-app.post("/api/admin/logout", requireAdmin, (req, res) => {
+app.post(
+    "/api/admin/logout",
+    requireAdmin,
+    (req, res) => {
 
-    adminSession = null;
+        adminSession = null;
 
-    res.json({
-        success: true,
-        message: "Logged out successfully."
-    });
-});
+        res.json({
+            success: true,
+            message:
+                "Logged out successfully."
+        });
+    }
+);
 
 
 // ===============================
 // START SERVER
 // ===============================
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Qube backend running on port ${PORT}`);
-});
+app.listen(
+    PORT,
+    "0.0.0.0",
+    () => {
+        console.log(
+            `Qube backend running on port ${PORT}`
+        );
+    }
+);
